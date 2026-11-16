@@ -1,0 +1,6 @@
+-std=c11
+-DGD32F30X_CL
+-ICODE/mcal/inc
+-ICODE/bsp/inc
+-ICODE/hal/inc
+-ICODE/cpu/cmsis

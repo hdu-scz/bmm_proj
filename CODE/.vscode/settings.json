@@ -1,0 +1,8 @@
+{
+  "explorer.sortOrder": "foldersFirst",
+  "explorer.sortOrderLexicographicOptions": "upper",
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true
+  }
+}
