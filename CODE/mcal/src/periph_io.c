@@ -1,80 +1,119 @@
 /**
  * @file periph_io.c
  * @brief GPIO 通用 IO 对象实现 (MCAL 层)
- * @author 
+ * @author
  * @date 2026-07-06
  */
 
+#include "stdinc.h"
 #include "periph_io.h"
 #include "gd32f30x_gpio.h"
 #include "gd32f30x_rcu.h"
 
-/* ==================== 全局 GPIO 对象数组（18 个引脚） ==================== */
-Periph_Gpio_t periph_io[IO_NUM];
+static void periph_io_init(Periph_Gpio_t *self, IoMode_t mode);
+static void periph_io_deinit(Periph_Gpio_t *self);
+static void periph_io_write(Periph_Gpio_t *self, uint8_t level);
+static int8_t periph_io_read(Periph_Gpio_t *self);
+static void periph_io_toggle(Periph_Gpio_t *self);
+static void periph_io_release_jtag(const Periph_Gpio_t *self);
 
-/* ==================== 私有函数声明 ==================== */
-static void gpio_init_func(Periph_Gpio_t *self, uint32_t port, uint32_t pin, IoMode_t mode);
-static void gpio_deinit(Periph_Gpio_t *self);
-static void gpio_write(Periph_Gpio_t *self, uint8_t level);
-static uint8_t gpio_read(Periph_Gpio_t *self);
-static void gpio_toggle(Periph_Gpio_t *self);
+/* 各引脚包装：对外方法无 self，内部绑定到 periph_io[n] */
+#define DEFINE_IO_WRAPPERS(n) \
+static void io##n##_init(IoMode_t mode) { periph_io_init(&periph_io[n], mode); } \
+static void io##n##_deinit(void) { periph_io_deinit(&periph_io[n]); } \
+static void io##n##_write(uint8_t level) { periph_io_write(&periph_io[n], level); } \
+static int8_t io##n##_read(void) { return periph_io_read(&periph_io[n]); } \
+static void io##n##_toggle(void) { periph_io_toggle(&periph_io[n]); }
 
-/* ==================== GPIO 对象数组静态初始化（18 个引脚） ==================== */
+#define IO_METHODS(n) \
+    .init = io##n##_init, \
+    .deinit = io##n##_deinit, \
+    .write = io##n##_write, \
+    .read = io##n##_read, \
+    .toggle = io##n##_toggle
+
+DEFINE_IO_WRAPPERS(0)
+DEFINE_IO_WRAPPERS(1)
+DEFINE_IO_WRAPPERS(2)
+DEFINE_IO_WRAPPERS(3)
+DEFINE_IO_WRAPPERS(4)
+DEFINE_IO_WRAPPERS(5)
+DEFINE_IO_WRAPPERS(6)
+DEFINE_IO_WRAPPERS(7)
+DEFINE_IO_WRAPPERS(8)
+DEFINE_IO_WRAPPERS(9)
+DEFINE_IO_WRAPPERS(10)
+DEFINE_IO_WRAPPERS(11)
+DEFINE_IO_WRAPPERS(12)
+DEFINE_IO_WRAPPERS(13)
+DEFINE_IO_WRAPPERS(14)
+DEFINE_IO_WRAPPERS(15)
+DEFINE_IO_WRAPPERS(16)
+DEFINE_IO_WRAPPERS(17)
+DEFINE_IO_WRAPPERS(18)
+DEFINE_IO_WRAPPERS(19)
+
 Periph_Gpio_t periph_io[IO_NUM] = {
-    /* 0  */ { .port = GPIOC, .pin = GPIO_PIN_1,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 1  */ { .port = GPIOA, .pin = GPIO_PIN_1,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 2  */ { .port = GPIOA, .pin = GPIO_PIN_3,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 3  */ { .port = GPIOA, .pin = GPIO_PIN_4,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 4  */ { .port = GPIOB, .pin = GPIO_PIN_0,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 5  */ { .port = GPIOB, .pin = GPIO_PIN_3,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 6  */ { .port = GPIOA, .pin = GPIO_PIN_15, .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 7  */ { .port = GPIOA, .pin = GPIO_PIN_12, .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 8  */ { .port = GPIOA, .pin = GPIO_PIN_11, .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 9  */ { .port = GPIOA, .pin = GPIO_PIN_8,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 10 */ { .port = GPIOC, .pin = GPIO_PIN_9,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 11 */ { .port = GPIOC, .pin = GPIO_PIN_8,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 12 */ { .port = GPIOC, .pin = GPIO_PIN_7,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 13 */ { .port = GPIOC, .pin = GPIO_PIN_6,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 14 */ { .port = GPIOB, .pin = GPIO_PIN_12, .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,   // IO_PB12 (CS0)
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 15 */ { .port = GPIOC, .pin = GPIO_PIN_4,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,   // IO_PC4  (CS1)
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 16 */ { .port = GPIOB, .pin = GPIO_PIN_1,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,   // IO_PB1  (CS2)
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
-    /* 17 */ { .port = GPIOA, .pin = GPIO_PIN_2,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0,   // IO_PA2  (CS3)
-               .init = gpio_init_func, .deinit = gpio_deinit, .write = gpio_write, .read = gpio_read, .toggle = gpio_toggle },
+    /* 0  IO_PC1  */ { .port = GPIOC, .pin = GPIO_PIN_1,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(0) },
+    /* 1  IO_PA1  */ { .port = GPIOA, .pin = GPIO_PIN_1,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(1) },
+    /* 2  IO_PA3  */ { .port = GPIOA, .pin = GPIO_PIN_3,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(2) },
+    /* 3  IO_PA4  */ { .port = GPIOA, .pin = GPIO_PIN_4,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(3) },
+    /* 4  IO_PB0  */ { .port = GPIOB, .pin = GPIO_PIN_0,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(4) },
+    /* 5  IO_PB3  */ { .port = GPIOB, .pin = GPIO_PIN_3,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(5) },
+    /* 6  IO_PA15 */ { .port = GPIOA, .pin = GPIO_PIN_15, .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(6) },
+    /* 7  IO_PA12 */ { .port = GPIOA, .pin = GPIO_PIN_12, .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(7) },
+    /* 8  IO_PA11 */ { .port = GPIOA, .pin = GPIO_PIN_11, .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(8) },
+    /* 9  IO_PA8  */ { .port = GPIOA, .pin = GPIO_PIN_8,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(9) },
+    /* 10 IO_PC9  */ { .port = GPIOC, .pin = GPIO_PIN_9,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(10) },
+    /* 11 IO_PC8  */ { .port = GPIOC, .pin = GPIO_PIN_8,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(11) },
+    /* 12 IO_PC7  */ { .port = GPIOC, .pin = GPIO_PIN_7,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(12) },
+    /* 13 IO_PC6  */ { .port = GPIOC, .pin = GPIO_PIN_6,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(13) },
+    /* 14 IO_PB12 CS0 */ { .port = GPIOB, .pin = GPIO_PIN_12, .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(14) },
+    /* 15 IO_PC4  CS1 */ { .port = GPIOC, .pin = GPIO_PIN_4,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(15) },
+    /* 16 IO_PB1  CS2 */ { .port = GPIOB, .pin = GPIO_PIN_1,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(16) },
+    /* 17 IO_PA2  CS3 */ { .port = GPIOA, .pin = GPIO_PIN_2,  .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(17) },
+    /* 18 IO_PC3  ADC CH13 */ { .port = GPIOC, .pin = GPIO_PIN_3, .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(18) },
+    /* 19 IO_PC5  ADC CH15 */ { .port = GPIOC, .pin = GPIO_PIN_5, .mode = IO_MODE_INPUT_FLOATING, .is_initialized = 0, IO_METHODS(19) },
 };
 
-/* ==================== 方法实现 ==================== */
-
-static void gpio_init_func(Periph_Gpio_t *self, uint32_t port, uint32_t pin, IoMode_t mode)
+/**
+ * @brief PA15 / PB3 作 GPIO 时释放 JTAG，保留 SWD
+ * @param self IO 对象
+ * @retval none
+ */
+static void periph_io_release_jtag(const Periph_Gpio_t *self)
 {
-    self->port = port;
-    self->pin  = pin;
+    if (((self->port == GPIOA) && (self->pin == GPIO_PIN_15)) ||
+        ((self->port == GPIOB) && (self->pin == GPIO_PIN_3))) {
+        rcu_periph_clock_enable(RCU_AF);
+        gpio_pin_remap_config(GPIO_SWJ_SWDPENABLE_REMAP, ENABLE);
+    }
+}
+
+/**
+ * @brief 配置引脚模式并置 is_initialized
+ * @param self IO 对象
+ * @param mode IoMode_t
+ * @retval none
+ */
+static void periph_io_init(Periph_Gpio_t *self, IoMode_t mode)
+{
+    uint32_t gpio_mode = GPIO_MODE_AIN;
+
     self->mode = mode;
     self->is_initialized = 0;
 
-    /* 使能 GPIO 时钟 */
-    if (port == GPIOA) rcu_periph_clock_enable(RCU_GPIOA);
-    else if (port == GPIOB) rcu_periph_clock_enable(RCU_GPIOB);
-    else if (port == GPIOC) rcu_periph_clock_enable(RCU_GPIOC);
-    else if (port == GPIOD) rcu_periph_clock_enable(RCU_GPIOD);
+    if (self->port == GPIOA) {
+        rcu_periph_clock_enable(RCU_GPIOA);
+    } else if (self->port == GPIOB) {
+        rcu_periph_clock_enable(RCU_GPIOB);
+    } else if (self->port == GPIOC) {
+        rcu_periph_clock_enable(RCU_GPIOC);
+    } else if (self->port == GPIOD) {
+        rcu_periph_clock_enable(RCU_GPIOD);
+    }
 
-    uint32_t gpio_mode = GPIO_MODE_AIN;
+    periph_io_release_jtag(self);
 
     switch (mode) {
         case IO_MODE_INPUT_FLOATING:  gpio_mode = GPIO_MODE_IN_FLOATING; break;
@@ -87,42 +126,82 @@ static void gpio_init_func(Periph_Gpio_t *self, uint32_t port, uint32_t pin, IoM
         case IO_MODE_ANALOG:          gpio_mode = GPIO_MODE_AIN; break;
     }
 
-    gpio_init(port, gpio_mode, GPIO_OSPEED_50MHZ, pin);
+    gpio_init(self->port, gpio_mode, GPIO_OSPEED_50MHZ, self->pin);
     self->is_initialized = 1;
 }
 
-static void gpio_deinit(Periph_Gpio_t *self)
+/**
+ * @brief 引脚恢复为浮空输入
+ * @param self IO 对象
+ * @retval none
+ */
+static void periph_io_deinit(Periph_Gpio_t *self)
 {
     gpio_init(self->port, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, self->pin);
     self->is_initialized = 0;
 }
 
-static void gpio_write(Periph_Gpio_t *self, uint8_t level)
+/**
+ * @brief 写输出电平；未初始化则忽略
+ * @param self IO 对象
+ * @param level 非 0 为高
+ * @retval none
+ */
+static void periph_io_write(Periph_Gpio_t *self, uint8_t level)
 {
-    if (!self->is_initialized) return;
+    if (self->is_initialized == 0U) {
+        return;
+    }
 
-    if (level) {
+    if (level != 0U) {
         gpio_bit_set(self->port, self->pin);
     } else {
         gpio_bit_reset(self->port, self->pin);
     }
 }
 
-static uint8_t gpio_read(Periph_Gpio_t *self)
+/**
+ * @brief 读输入电平
+ * @param self IO 对象
+ * @retval 1 高，0 低，-1 未初始化
+ */
+static int8_t periph_io_read(Periph_Gpio_t *self)
 {
-    if (!self->is_initialized) return 0;
-    return gpio_input_bit_get(self->port, self->pin);
+    if ((self == 0) || (self->is_initialized == 0U)) {
+        return -1;
+    }
+    if (gpio_input_bit_get(self->port, self->pin) == SET) {
+        return 1;
+    }
+    return 0;
 }
 
-static void gpio_toggle(Periph_Gpio_t *self)
+/**
+ * @brief 翻转输出；未初始化则忽略
+ * @param self IO 对象
+ * @retval none
+ */
+static void periph_io_toggle(Periph_Gpio_t *self)
 {
-    if (!self->is_initialized) return;
-    gpio_bit_write(self->port, self->pin, (gpio_input_bit_get(self->port, self->pin) == RESET) ? SET : RESET);
+    if (self->is_initialized == 0U) {
+        return;
+    }
+    if (gpio_input_bit_get(self->port, self->pin) == RESET) {
+        gpio_bit_set(self->port, self->pin);
+    } else {
+        gpio_bit_reset(self->port, self->pin);
+    }
 }
 
-/* ==================== 通过枚举获取 IO 指针 ==================== */
+/**
+ * @brief 按枚举取 IO 对象指针
+ * @param index IoIndex_t
+ * @retval 对象指针；非法索引返回 NULL
+ */
 Periph_Gpio_t* mcal_io_get(IoIndex_t index)
 {
-    if (index >= IO_MAX) return NULL;
+    if (index >= IO_MAX) {
+        return NULL;
+    }
     return &periph_io[index];
 }

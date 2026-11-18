@@ -169,15 +169,12 @@ static void init(Dev_Gt2818s_t *self)
     }
 
     if (self->periph.spi != 0 && self->periph.spi->init != 0) {
-        self->periph.spi->init(self->periph.spi);
+        self->periph.spi->init();
     }
 
     if (self->periph.io_cs != 0) {
-        self->periph.io_cs->init(self->periph.io_cs,
-                                 self->periph.io_cs->port,
-                                 self->periph.io_cs->pin,
-                                 IO_MODE_OUTPUT_PP);
-        self->periph.io_cs->write(self->periph.io_cs, CS_HIGH);
+        self->periph.io_cs->init(IO_MODE_OUTPUT_PP);
+        self->periph.io_cs->write(CS_HIGH);
     }
 
     self->func.isInitialized = 1;
@@ -190,11 +187,11 @@ static void deinit(Dev_Gt2818s_t *self)
     }
 
     if (self->periph.io_cs != 0) {
-        self->periph.io_cs->deinit(self->periph.io_cs);
+        self->periph.io_cs->deinit();
     }
 
     if (self->periph.spi != 0) {
-        self->periph.spi->deinit(self->periph.spi);
+        self->periph.spi->deinit();
     }
 
     self->func.isInitialized = 0;
@@ -206,13 +203,13 @@ static void wakeup(Dev_Gt2818s_t *self)
         return;
     }
     self->func.cs_set(self, CS_LOW);
-    periph_dwt.delay_us(&periph_dwt, 150);
+    periph_dwt.delay_us(150);
     self->func.cs_set(self, CS_HIGH);
-    periph_dwt.delay_us(&periph_dwt, 150);
+    periph_dwt.delay_us(150);
     self->func.cs_set(self, CS_LOW);
-    periph_dwt.delay_us(&periph_dwt, 150);
+    periph_dwt.delay_us(150);
     self->func.cs_set(self, CS_HIGH);
-    periph_dwt.delay_us(&periph_dwt, 150);
+    periph_dwt.delay_us(150);
 }
 
 static void cs_set(Dev_Gt2818s_t *self, uint8_t level)
@@ -220,7 +217,7 @@ static void cs_set(Dev_Gt2818s_t *self, uint8_t level)
     if (self == 0 || self->periph.io_cs == 0) {
         return;
     }
-    self->periph.io_cs->write(self->periph.io_cs, level);
+    self->periph.io_cs->write(level);
 }
 
 static uint8_t write_cfg(Dev_Gt2818s_t *self)
@@ -257,7 +254,7 @@ static uint8_t write_cfg(Dev_Gt2818s_t *self)
 
     self->func.wakeup(self);
     self->func.cs_set(self, CS_LOW);
-    self->periph.spi->send_array(self->periph.spi, frameInfo, (uint16_t)sizeof(frameInfo), 1000U);
+    self->periph.spi->send_array(frameInfo, (uint16_t)sizeof(frameInfo), 1000U);
     self->func.cs_set(self, CS_HIGH);
 
     /* ========== WRCFGB: CMD=0x0024 ========== */
@@ -277,7 +274,7 @@ static uint8_t write_cfg(Dev_Gt2818s_t *self)
     memcpy(frameInfo + 4, (uint8_t *)cfg_b, 8);
 
     self->func.cs_set(self, CS_LOW);
-    self->periph.spi->send_array(self->periph.spi, frameInfo, (uint16_t)sizeof(frameInfo), 1000U);
+    self->periph.spi->send_array(frameInfo, (uint16_t)sizeof(frameInfo), 1000U);
     self->func.cs_set(self, CS_HIGH);
 
     return 0;
@@ -312,8 +309,8 @@ static uint8_t read_cfg(Dev_Gt2818s_t *self)
     memset(rxBuf, 0x00, sizeof(rxBuf));
     self->func.wakeup(self);
     self->func.cs_set(self, CS_LOW);
-    self->periph.spi->send_array(self->periph.spi, frameHead, (uint16_t)sizeof(frameHead), 1000U);
-    self->periph.spi->read_array(self->periph.spi, rxBuf, (uint16_t)sizeof(rxBuf), 1000U);
+    self->periph.spi->send_array(frameHead, (uint16_t)sizeof(frameHead), 1000U);
+    self->periph.spi->read_array(rxBuf, (uint16_t)sizeof(rxBuf), 1000U);
     self->func.cs_set(self, CS_HIGH);
 
     pecCal = pec15_cal(6, rxBuf);
@@ -335,8 +332,8 @@ static uint8_t read_cfg(Dev_Gt2818s_t *self)
 
     memset(rxBuf, 0x00, sizeof(rxBuf));
     self->func.cs_set(self, CS_LOW);
-    self->periph.spi->send_array(self->periph.spi, frameHead, (uint16_t)sizeof(frameHead), 1000U);
-    self->periph.spi->read_array(self->periph.spi, rxBuf, (uint16_t)sizeof(rxBuf), 1000U);
+    self->periph.spi->send_array(frameHead, (uint16_t)sizeof(frameHead), 1000U);
+    self->periph.spi->read_array(rxBuf, (uint16_t)sizeof(rxBuf), 1000U);
     self->func.cs_set(self, CS_HIGH);
 
     pecCal = pec15_cal(6, rxBuf);
@@ -374,7 +371,7 @@ static uint8_t adcv(Dev_Gt2818s_t *self, uint8_t adc_mode, uint8_t ch)
 
     self->func.wakeup(self);
     self->func.cs_set(self, CS_LOW);
-    self->periph.spi->send_array(self->periph.spi, frameHead, (uint16_t)sizeof(frameHead), 1000U);
+    self->periph.spi->send_array(frameHead, (uint16_t)sizeof(frameHead), 1000U);
     self->func.cs_set(self, CS_HIGH);       
     return 0;
 }
@@ -417,8 +414,8 @@ static uint8_t rdcv(Dev_Gt2818s_t *self)
 
         memset(rxBuf, 0x00, sizeof(rxBuf));
         self->func.cs_set(self, CS_LOW);
-        self->periph.spi->send_array(self->periph.spi, frameHead, (uint16_t)sizeof(frameHead), 1000U);
-        self->periph.spi->read_array(self->periph.spi, rxBuf, (uint16_t)sizeof(rxBuf), 1000U);
+        self->periph.spi->send_array(frameHead, (uint16_t)sizeof(frameHead), 1000U);
+        self->periph.spi->read_array(rxBuf, (uint16_t)sizeof(rxBuf), 1000U);
         self->func.cs_set(self, CS_HIGH);
 
         pecCal = pec15_cal(6, rxBuf);
@@ -488,8 +485,8 @@ static uint8_t rdgp(Dev_Gt2818s_t *self)
 
         memset(rxBuf, 0x00, sizeof(rxBuf));
         self->func.cs_set(self, CS_LOW);
-        self->periph.spi->send_array(self->periph.spi, frameHead, (uint16_t)sizeof(frameHead), 1000U);
-        self->periph.spi->read_array(self->periph.spi, rxBuf, (uint16_t)sizeof(rxBuf), 1000U);
+        self->periph.spi->send_array(frameHead, (uint16_t)sizeof(frameHead), 1000U);
+        self->periph.spi->read_array(rxBuf, (uint16_t)sizeof(rxBuf), 1000U);
         self->func.cs_set(self, CS_HIGH);
 
         pecCal = pec15_cal(6, rxBuf);
@@ -524,7 +521,7 @@ static uint8_t clrcell(Dev_Gt2818s_t *self)
 
     self->func.wakeup(self);
     self->func.cs_set(self, CS_LOW);
-    self->periph.spi->send_array(self->periph.spi, frameHead, (uint16_t)sizeof(frameHead), 1000U);
+    self->periph.spi->send_array(frameHead, (uint16_t)sizeof(frameHead), 1000U);
     self->func.cs_set(self, CS_HIGH);       
     return 0;
 }
@@ -544,7 +541,7 @@ static uint8_t clraux(Dev_Gt2818s_t *self)
 
     self->func.wakeup(self);
     self->func.cs_set(self, CS_LOW);
-    self->periph.spi->send_array(self->periph.spi, frameHead, (uint16_t)sizeof(frameHead), 1000U);
+    self->periph.spi->send_array(frameHead, (uint16_t)sizeof(frameHead), 1000U);
     self->func.cs_set(self, CS_HIGH);       
     return 0;
 }

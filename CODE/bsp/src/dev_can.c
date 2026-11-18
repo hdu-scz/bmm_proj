@@ -35,11 +35,9 @@ Dev_Can_t dev_can0 = {
 static void dev_can_init(Dev_Can_t *self)
 {
     if (self->periph != NULL) {
-        self->periph->init(self->periph);
-
-        /* 初始化时向 MCAL 层注册内部钩子函数 */
-        self->periph->register_rx_callback(self->periph, self->hook_to_mcal_rx);
-        self->periph->enable_rx_interrupt(self->periph);
+        self->periph->init();
+        self->periph->register_rx_callback(self->hook_to_mcal_rx);
+        self->periph->enable_rx_interrupt();
         self->is_initialized = 1;
     }
 }
@@ -48,9 +46,9 @@ static void dev_can_init(Dev_Can_t *self)
 static void dev_can_deinit(Dev_Can_t *self)
 {
     if (self->periph != NULL) {
-        self->periph->deinit(self->periph);
-        self->periph->register_rx_callback(self->periph, NULL);
-        self->periph->disable_rx_interrupt(self->periph);
+        self->periph->disable_rx_interrupt();
+        self->periph->register_rx_callback(NULL);
+        self->periph->deinit();
     }
     self->is_initialized = 0;
     self->rx_frame_callback = NULL;
@@ -62,7 +60,7 @@ static uint8_t dev_can_send(Dev_Can_t *self, CanFrame_t *frame)
         return 0;
     }
 
-    return self->periph->transmit(self->periph, frame->canid, frame->data, frame->len);
+    return self->periph->transmit(frame->canid, frame->data, frame->len);
 }
 
 

@@ -1,16 +1,19 @@
 /**
  * @file periph_spi.c
- * @brief SPI 外设对象实现 (MCAL 层)
+ * @brief SPI0 外设对象实现 (MCAL 层)
  * @author
  * @date 2026-07-02
+ *
+ * 引脚固定为 PA5 SCK / PA6 MISO / PA7 MOSI。
+ * 未 init 时 send_array / read_array 返回 0。
  */
 
+#include "stdinc.h"
 #include "periph_spi.h"
 #include "gd32f30x_gpio.h"
 #include "gd32f30x_spi.h"
 #include "gd32f30x_rcu.h"
 
-/* ==================== SPI0 GPIO 引脚映射（项目仅使用 SPI0）==================== */
 #define SPI0_SCK_PORT     GPIOA
 #define SPI0_SCK_PIN      GPIO_PIN_5
 #define SPI0_MISO_PORT    GPIOA
@@ -28,7 +31,11 @@ static void spi_clock_disable(uint32_t spi_periph);
 static void spi_gpio_clock_enable(uint32_t port);
 static int8_t spi_wait_flag(uint32_t spi_periph, uint32_t flag, uint32_t *timeout);
 
-/* ==================== 全局 SPI0 对象实例（静态初始化） ==================== */
+static void spi0_init(void) { periph_spi_init(&periph_spi0); }
+static void spi0_deinit(void) { periph_spi_deinit(&periph_spi0); }
+static int8_t spi0_send_array(const uint8_t *data, uint16_t size, uint32_t timeout) { return periph_spi_send_array(&periph_spi0, data, size, timeout); }
+static int8_t spi0_read_array(uint8_t *data, uint16_t size, uint32_t timeout) { return periph_spi_read_array(&periph_spi0, data, size, timeout); }
+
 Periph_Spi_t periph_spi0 = {
     .spi_periph          = SPI0,
     .baudrate_prescaler  = SPI_PSC_8,
@@ -40,14 +47,18 @@ Periph_Spi_t periph_spi0 = {
         .miso = {SPI0_MISO_PORT, SPI0_MISO_PIN},
         .mosi = {SPI0_MOSI_PORT, SPI0_MOSI_PIN},
     },
-    .state               = 0,
-    .error_code          = 0,
-    .init                = periph_spi_init,
-    .deinit              = periph_spi_deinit,
-    .send_array          = periph_spi_send_array,
-    .read_array          = periph_spi_read_array
+    .is_initialized      = 0,
+    .init                = spi0_init,
+    .deinit              = spi0_deinit,
+    .send_array          = spi0_send_array,
+    .read_array          = spi0_read_array
 };
 
+/**
+ * @brief 打开 SPI 外设时钟
+ * @param spi_periph SPI0 / SPI1 / SPI2
+ * @retval none
+ */
 static void spi_clock_enable(uint32_t spi_periph)
 {
     if (spi_periph == SPI0) {
@@ -59,6 +70,11 @@ static void spi_clock_enable(uint32_t spi_periph)
     }
 }
 
+/**
+ * @brief 关闭 SPI 外设时钟
+ * @param spi_periph SPI0 / SPI1 / SPI2
+ * @retval none
+ */
 static void spi_clock_disable(uint32_t spi_periph)
 {
     if (spi_periph == SPI0) {
@@ -70,6 +86,11 @@ static void spi_clock_disable(uint32_t spi_periph)
     }
 }
 
+/**
+ * @brief 按端口打开 GPIO 时钟
+ * @param port GPIOA、GPIOB 或 GPIOC
+ * @retval none
+ */
 static void spi_gpio_clock_enable(uint32_t port)
 {
     if (port == GPIOA) {
@@ -81,6 +102,14 @@ static void spi_gpio_clock_enable(uint32_t port)
     }
 }
 
+/**
+ * @brief 等待 SPI 标志位置位
+ * @param spi_periph SPI 外设
+ * @param flag 等待的标志，如 SPI_FLAG_TBE
+ * @param timeout 剩余超时计数，每次循环减一
+ * @retval 1 标志已置位
+ * @retval -1 超时
+ */
 static int8_t spi_wait_flag(uint32_t spi_periph, uint32_t flag, uint32_t *timeout)
 {
     while (RESET == spi_i2s_flag_get(spi_periph, flag)) {
@@ -92,9 +121,20 @@ static int8_t spi_wait_flag(uint32_t spi_periph, uint32_t flag, uint32_t *timeou
     return 1;
 }
 
+/**
+ * @brief 初始化 SPI0：时钟、引脚、主机全双工
+ * @param self SPI 对象
+ * @retval none
+ */
 static void periph_spi_init(Periph_Spi_t *self)
 {
     spi_parameter_struct spi_parameter;
+
+    if (self == NULL) {
+        return;
+    }
+
+    self->is_initialized = 0;
 
     spi_clock_enable(self->spi_periph);
     spi_gpio_clock_enable(self->physical_pins.sck.port);
@@ -116,23 +156,46 @@ static void periph_spi_init(Periph_Spi_t *self)
 
     spi_init(self->spi_periph, &spi_parameter);
     spi_enable(self->spi_periph);
+
+    self->is_initialized = 1;
 }
 
+/**
+ * @brief 关闭 SPI 并清初始化标志
+ * @param self SPI 对象
+ * @retval none
+ */
 static void periph_spi_deinit(Periph_Spi_t *self)
 {
+    if (self == NULL) {
+        return;
+    }
+
     spi_disable(self->spi_periph);
     spi_clock_disable(self->spi_periph);
+    self->is_initialized = 0;
 }
 
+/**
+ * @brief 主机发送若干字节（全双工下同步抽空 RX）
+ * @param self SPI 对象
+ * @param data 待发送数据
+ * @param size 字节数
+ * @param timeout 等待标志的循环上限
+ * @retval 1 成功
+ * @retval -1 等待 TBE/RBNE 超时
+ * @retval 0 未初始化或参数无效
+ */
 static int8_t periph_spi_send_array(Periph_Spi_t *self, const uint8_t *data, uint16_t size, uint32_t timeout)
 {
     uint16_t i;
 
-    if ((self == 0) || (data == 0) || (size == 0U) || (timeout == 0U)) {
+    if ((self == NULL) || (self->is_initialized == 0U) || (data == NULL) ||
+        (size == 0U) || (timeout == 0U)) {
         return 0;
     }
 
-    for (i = 0; i < size; i++) {
+    for (i = 0U; i < size; i++) {
         if (spi_wait_flag(self->spi_periph, SPI_FLAG_TBE, &timeout) != 1) {
             return -1;
         }
@@ -145,15 +208,26 @@ static int8_t periph_spi_send_array(Periph_Spi_t *self, const uint8_t *data, uin
     return 1;
 }
 
+/**
+ * @brief 主机读若干字节（发送 0xFF 时钟）
+ * @param self SPI 对象
+ * @param data 接收缓冲
+ * @param size 字节数
+ * @param timeout 等待标志的循环上限
+ * @retval 1 成功
+ * @retval -1 等待 TBE/RBNE 超时
+ * @retval 0 未初始化或参数无效
+ */
 static int8_t periph_spi_read_array(Periph_Spi_t *self, uint8_t *data, uint16_t size, uint32_t timeout)
 {
     uint16_t i;
 
-    if ((self == 0) || (data == 0) || (size == 0U) || (timeout == 0U)) {
+    if ((self == NULL) || (self->is_initialized == 0U) || (data == NULL) ||
+        (size == 0U) || (timeout == 0U)) {
         return 0;
     }
 
-    for (i = 0; i < size; i++) {
+    for (i = 0U; i < size; i++) {
         if (spi_wait_flag(self->spi_periph, SPI_FLAG_TBE, &timeout) != 1) {
             return -1;
         }
