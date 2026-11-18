@@ -6,7 +6,6 @@
  */
 
 #include "periph_dwt.h"
-#include "core_cm4.h"
 #include "gd32f30x.h"
 
 /* 系统内核时钟 48 MHz */

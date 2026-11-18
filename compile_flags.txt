@@ -1,5 +1,6 @@
 -std=c11
--DGD32F30X_CL
+-DGD32F30X_HD
+-DUSE_STDPERIPH_DRIVER
 -ICODE/cpu/inc
 -ICODE/mcal/inc
 -ICODE/bsp/inc

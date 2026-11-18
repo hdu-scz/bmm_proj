@@ -26,9 +26,9 @@
 #define CAN0_CLOCK_HZ     24000000UL
 #define CAN0_BIT_TQ       8UL
 #define CAN0_BAUDRATE     500000U
-#define CAN0_PRESCALER    (CAN0_CLOCK_HZ / ((uint32_t)CAN0_BAUDRATE * CAN0_BIT_TQ))
+#define CAN0_PRESCALER    (CAN0_CLOCK_HZ / (CAN0_BAUDRATE * CAN0_BIT_TQ))
 
-#if ((CAN0_CLOCK_HZ % ((uint32_t)CAN0_BAUDRATE * CAN0_BIT_TQ)) != 0U)
+#if ((CAN0_CLOCK_HZ % (CAN0_BAUDRATE * CAN0_BIT_TQ)) != 0U)
 #error "CAN0_BAUDRATE cannot divide the 24 MHz CAN clock into 8 time quanta"
 #endif
 

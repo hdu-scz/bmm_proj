@@ -9,7 +9,6 @@
 #define PERIPH_UART_H
 
 #include "stdinc.h"
-#include "gd32f30x.h"
 
 typedef void (*UartRxCallback_t)(uint8_t data);
 
